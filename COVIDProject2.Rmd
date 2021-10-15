@@ -1,0 +1,197 @@
+---
+title: "R Notebook - COVID Cases in Northeast Colorado"
+author: "Maya Reese Farmer"
+date: "September 28, 2021"
+output:
+  pdf_document: default
+  html_notebook: default
+  html_document:
+    df_print: paged
+---
+
+### Introduction  
+I will be demonstrating some introductory modeling and data visualization techniques using the COVID-19 data for the northeast district in Colorado. This includes Logan, Morgan, Washington, Yuma, Phillips, and Sedgwick county.
+
+The 'COVID19CaseData' dataset contains over 10,000 COVID case observations and has 19 columns. The most notable variables include:  
+
+ - Case Status  
+ - Date Reported
+ - County
+ - Gender 
+ - Age 
+ - Race and Ethnicity  
+ - Outcome (alive or deceased)
+ - Hospitalized (yes or no) 
+ - Spec1 Test Result (positive or negative)
+ - Reinfection (yes or no) 
+
+
+```{r}
+## importing dataset into r
+Covid19CaseData <- read.csv("~/Downloads/Covid19CaseData.csv")
+attach(Covid19CaseData)
+
+## view first 6 rows of data
+head(Covid19CaseData)
+```
+ 
+ 
+### Queries and Data Visualization
+
+I will be querying the data to answer a series of questions using R programming language. I'll present my findings using either tables or ggplot2 for data visualization.  
+
+
+#### Total COVID Cases
+
+The first thing I want to do is determine the total number of cases in the northeast district. This should include only cases that have a 'confirmed' or 'probable' case status.
+```{r}
+library(plyr)
+## count the number of individuals in each Case Status category
+count(Case.Status)
+```
+The output shows that there are 8741 Confirmed cases and 884 Probable cases. This means there have been a total of 9625 cases in the northeast district to date.  
+
+Next, I want to extract these confirmed and probable cases into a new data set for additional querying.  
+
+```{r,tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+COVIDData.confirmed <- subset(Covid19CaseData, Case.Status == 'Confirmed' | Case.Status == 'Probable')
+attach(COVIDData.confirmed)
+```
+Now the COVIDDate.confirmed data table only includes those 9625 COVID cases.  
+
+
+
+#### Percent COVID Cases by Age Group
+
+Next I want to look at the percentage of cases by age group. The age groups include <18 yo, 18-35 yo, 36-55 yo, 56-75 yo, >75 yo. By doing this, we can observe whether individuals in different age groups have been influenced differently by COVID-19.
+```{r}
+## count the number of cases if Age < 18yo
+count(Age.yrs < 18)
+```
+```{r}
+## count # of cases when Age is 18-35
+count(Age.yrs >= 18 & Age.yrs <= 35)
+```
+```{r}
+## count # of cases when Age is 36-55
+count(Age.yrs >= 36 & Age.yrs <= 55)
+```
+```{r}
+## count # of cases when Age is 56-75
+count(Age.yrs >= 56 & Age.yrs <= 75)
+```
+```{r}
+## count # of cases when Age is >75
+count(Age.yrs > 75)
+```
+We can now create a new data table using these outputs to show how cases are distributed across age groups. 
+```{r,tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+age.group = c("< 18 yrs","18-35 yrs","36-55 yrs","56-75 yrs","> 75 yrs","Not Specified")
+number.cases = c(618,3023,3000,2207,776,1)
+percent.agedata = data.frame(age.group,number.cases)
+percent.agedata
+```
+```{r}
+## calculate percent cases by age
+percent.age = (number.cases/sum(number.cases))*100
+percent.age
+
+## attach data string to percent.agedata dataframe
+percent.agedata$percent.age = percent.age
+attach(percent.agedata)
+```
+
+Now that the percent cases by age data table has been created, we can visualize the data using a donut chart.
+```{r,tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(ggplot2)
+library(cowplot)
+
+ggplot(percent.agedata, aes(x=2,y=percent.age, fill=age.group,color=age.group)) + geom_col(size=1) + coord_polar(theta="y",start = 1) +  xlim(c(0.5, 2.5)) + theme_void() + geom_text(aes(label=paste0(round(percent.age),"%")),color="black",position = position_stack(vjust = 0.5),check_overlap = T,size=4.5,show.legend = FALSE) + scale_fill_manual(values=alpha(c("#751a33","#b34233","#d28f33","#d4b95e","#4ea2a2","#335c67"),0.75),name="Age Group",breaks=c("< 18 yrs","18-35 yrs","36-55 yrs","56-75 yrs","> 75 yrs","Not Specified"),labels=c("Under 18", "18-35","36-55","56-75","Over 75","Not Specified")) + scale_color_manual(values=alpha(c("#751a33","#b34233","#d28f33","#d4b95e","#4ea2a2","#335c67"),0.75),name="Age Group",breaks=c("< 18 yrs","18-35 yrs","36-55 yrs","56-75 yrs","> 75 yrs","Not Specified"), labels=c("Under 18", "18-35","36-55","56-75","Over 75","Not Specified")) + ggtitle("Percent of COVID-19 Cases by Age Group \n in the Northeast District") + theme(plot.title = element_text(size=16,face="bold",hjust = 0.5), plot.caption = element_text(size=8,hjust = 0.5), legend.title = element_text(size=12, face="bold"), legend.text = element_text(size=10)) + labs(caption = "Counties Included: Logan, Morgan, Phillips, Sedgwick, Washington, and Yuma")
+```
+
+---
+
+
+
+#### Percent COVID Cases by Race
+
+Next, we can look at a similar breakdown of percent COVID cases based on Race.
+```{r}
+count(Race.1)
+```
+We can see from the output that Race is missing for 3483 individuals. Also, there are 2 redundant race categories: Unknown abd Refused. To make the calculations and visualization more concise, we should change the blank, Refused, and Unknown characters to a single "Not Specified" character.
+```{r}
+COVIDData.confirmed$Race.1 <- sub("^$", "Not Specified", COVIDData.confirmed$Race.1)
+COVIDData.confirmed$Race.1 <- sub("Unknown", "Not Specified", COVIDData.confirmed$Race.1)
+COVIDData.confirmed$Race.1 <- sub("Refused", "Not Specified", COVIDData.confirmed$Race.1)
+
+## recount cases based on Race  
+count(COVIDData.confirmed$Race.1)
+```
+Now that the data are cleaned up, we can create a data frame from this output which we'll use for the next visualization. 
+```{r,tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+race = c("American Indian or Alaska Native","Asian","Black or African American","Native Hawaiian or Other Pacific Islander","Not Specified","Other Race","White")
+cases = c(26,22,324,16,3973,532,4732)
+percent.racedata = data.frame(race,cases)
+percent.racedata
+```
+```{r}
+## calculate percent cases by race
+percent.race = (cases/sum(cases))
+percent.race
+
+## attach data string to percent.agedata dataframe
+percent.racedata$percent.race = percent.race
+attach(percent.racedata)
+percent.racedata
+```
+
+Now that the percent cases by Race data table has been created, we can visualize the data using a bar chart.
+```{r,tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(scales)
+
+ggplot(percent.racedata,aes(x=reorder(race,percent.race),y=percent.race,
+fill=reorder(race,percent.race),color=reorder(race,percent.race))) + geom_bar(stat = "identity",size=1) + coord_flip() + labs(x="",y="Percentage of COVID-19 Cases") + scale_fill_manual(values=alpha(c("#033f63","#28666e","#b5b682","#fedc97","#ea8c55","#ad2e24","#540804"),0.85),breaks=c("White","Not Specified","Other Race","Black or African American","American Indian or Alaska Native","Asian","Native Hawaiian or Other Pacific Islander")) + scale_color_manual(values=c("#033f63","#28666e","#b5b682","#fedc97","#ea8c55","#ad2e24","#540804"),breaks=c("White","Not Specified","Other Race","Black or African American","American Indian or Alaska Native","Asian","Native Hawaiian or Other Pacific Islander")) + scale_y_continuous(labels=percent) + ggtitle("Percent of COVID-19 Cases by Race \n in the Northeast District") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), plot.title = element_text(size=16,face="bold",hjust = 0.5), legend.position = "none", axis.text.y = element_text(face = "bold",size = 10, angle = 22.5), axis.title.x = element_text(face = "bold",size = 12),axis.line.x = element_line(color = "black"),axis.text.x = element_text(size=11)) +  scale_x_discrete(labels=c("Native Hawaiian or \n other Pacific Islander","Asian","American Indian \n or Alaska Native","Black or \n African American","Other Race","Not Specified","White"))
+```
+
+---
+
+
+
+#### Incidence Rate per 100K by County
+
+Finally, I want to see how the COVID incidence rate per 100K differs by county.
+```{r}
+## count the number of confirmed cases for each county
+count(COVIDData.confirmed$County)
+```
+Now we can see the total number of confirmed cases per county.  
+
+In order to calculate incidence rate, we need to create a new data frame that includes the population for each county.
+```{r}
+county = c("Logan","Morgan","Phillips","Sedgwick","Washington","Yuma")
+population = c(21914,28984,4278,2229,4742,10063) 
+incid.county = c(4311,3046,451,269,508,1040)
+incidence = data.frame(county,population,incid.county)
+attach(incidence)
+head(incidence)
+```
+I can now use the number of cases for each county and county population to calculate incidence rate.
+```{r}
+incidence.rate = (incid.county/population)*100000
+
+## attach incidence rate to incidence data frame
+incidence$incidence.rate = incidence.rate
+attach(incidence)
+head(incidence)
+```
+
+Finally, we can visualize this data using a segment plot.
+```{r,tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+ggplot(incidence, aes(x=reorder(county,-incidence.rate), y=incidence.rate,color=reorder(county,-incidence.rate),fill=reorder(county,-incidence.rate))) + geom_segment(aes(x=reorder(county,-incidence.rate), xend=reorder(county,-incidence.rate),y=0, yend=incidence.rate),size=2) + geom_point(size=7,shape=21,alpha=0.6) + labs(x="County",y="Incidence per 100K") + scale_fill_brewer(palette="RdBu") + scale_color_brewer(palette = "RdBu") + ggtitle("Incidence Rate of COVID-19 Per 100K \n Ordered by County") + theme(plot.title = element_text(size=16,face="bold",hjust = 0.5),axis.ticks.x = element_blank(),axis.text.x = element_text(size=11),axis.title.x = element_text(face="bold",size = 12),axis.title.y = element_text(face = "bold",size = 12), axis.text.y = element_text(size = 11),legend.position = "none",panel.grid.major = element_blank(),panel.grid.minor = element_blank(),panel.background = element_blank())
+```
+
+
+
+
+
