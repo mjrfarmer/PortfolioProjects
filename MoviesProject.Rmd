@@ -1,0 +1,196 @@
+---
+title: "R Notebook - Movie Industries Project"
+author: "Maya Reese Farmer"
+date: "October 15, 2021"
+output:
+  pdf_document: default
+  html_notebook: default
+  html_document:
+    df_print: paged
+---
+
+### Introduction  
+I will be demonstrating some introductory statistics and data visualization techniques using the Movie Industry dataset from kaggle.com  
+*this data was scraped from IMDb  
+
+The 'movies' dataset contains 6820 movies (220 movies per year, 1986-2016) and has 15 columns. Each movie has the following attributes:  
+
+ - budget  
+ - company
+ - county
+ - director 
+ - genre
+ - gross (revenue)
+ - name
+ - rating (R, PG, PG-13, etc.)
+ - released (date)
+ - runtime (minutes)
+ - score (IMDb user rating)
+ - votes
+ - star 
+ - writer
+ - year
+
+
+```{r}
+## importing dataset into r
+movies <- read.csv("~/Downloads/movies.csv")
+attach(movies)
+
+## view first 6 rows of data
+head(movies)
+```
+ 
+ 
+### Queries and Data Visualization
+
+I'll be querying the data to answer a series of questions and will present my findings using either tables or ggplot2 for data visualization.  
+
+
+#### Genre, Budget, and Revenue
+
+The first thing that would be interesting to look at is the relationship between movie genre and budget: is there a significant difference in budget between movies of different genres?  
+Because genre is a categorical variable, I will perform an analysis of variance (ANOVA) of budget and movie genre.  
+```{r}
+## create one-way anova model
+genre.aov = aov(budget~genre, data=movies)
+summary(genre.aov)
+```
+The output shows that different genres have significantly different budgets becuase the p value is significantly less that 0.05.  
+
+I think the best way to visualize this data would be to use a crossbar plot in ggplot2. These plots will show the mean and standard deviation (sd) in budget for each genre. To calculate mean and sd more efficiently, I can use a summary function.
+
+```{r,tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(plyr)
+## first determine whether there are NAs in the budget column 
+sum(is.na(budget))
+```
+```{r,tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+## summary function to calculate mean, sd, and standard error removing NAs
+summary.genre <- ddply(movies, c("genre"), summarise,
+               N    = length(budget),
+               mean = mean(budget, na.rm = TRUE),
+               sd   = sd(budget, na.rm = TRUE),
+               se   = sd / sqrt(N)
+)
+summary.genre
+```
+  
+Now the summary dataset is ready for ggplot.  
+
+```{r,tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+library(ggplot2)
+library(cowplot)
+library(scales)
+library(viridisLite)
+
+ggplot(na.omit(summary.genre), aes(x=(reorder(genre,-mean)),mean,color=reorder(genre,-mean),fill=reorder(genre,-mean))) + geom_crossbar(aes(ymin=mean-sd, ymax=mean+sd),alpha=0.6,width=0.8) + scale_y_continuous(labels = comma) + theme_cowplot(12) + scale_fill_viridis_d(name="Genre") + scale_colour_viridis_d(name="Genre") + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), legend.title = element_text(face="bold"), axis.title.x = element_text(face="bold"), axis.title.y = element_text(face="bold"), plot.title = element_text(size=16,face="bold",hjust = 0.5)) + labs(x="Genre",y="Mean Budget") + ggtitle("Mean Budget by Movie Genre")
+```
+
+The figure shows mean budget broken down by movie genre. Each box and color represents a different genre (as shown in legend). Each box represents the mean (center line) and sd in budget for each genre. Based on this graph, we can see that Animation, Action, and Family movies tend to have the highest budgets, but there's also a lot of variation in budget as well. On the other end of the spectrum, Westerns, Thrillers, and Horror films tend to have the lowest budgets, and there's much less variation around the mean.  
+
+Next, let's see whether this pattern holds when we compare genre to gross revenue: do Animation, Action, and Family movies also rake in the highest gross revenue?  
+```{r}
+## create summary data comparing genre and gross revenue
+summary.gross <- ddply(movies, c("genre"), summarise,
+               N    = length(gross),
+               mean = mean(gross, na.rm = TRUE),
+               sd   = sd(gross, na.rm = TRUE),
+               se   = sd / sqrt(N)
+)
+summary.gross
+```
+```{r,tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+
+ggplot(na.omit(summary.gross), aes(x=(reorder(genre,-mean)),y=mean,color=reorder(genre,-mean),fill=reorder(genre,-mean))) + geom_crossbar(aes(ymin=mean-sd, ymax=mean+sd),alpha=0.6,width=0.8) + scale_y_continuous(labels = comma) + theme_cowplot(12) + scale_fill_viridis_d(name="Genre", option= "plasma") + scale_colour_viridis_d(name="Genre", option= "plasma") + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), legend.title = element_text(face="bold"), axis.title.x = element_text(face="bold"), axis.title.y = element_text(face="bold"), plot.title = element_text(size=16,face="bold",hjust = 0.5)) + labs(x="Genre",y="Mean Gross Revenue") + ggtitle("Mean Gross Revenue by Movie Genre")
+```
+
+The graph shows that the top 3 genres from the budget graph (Animation, Action, and Family) are also the highest revenue genres *although action and family switch. I think it's interesting to note that Family movies have a lot of variation around the mean, which indicates that they can be highly lucrative or they cab be extremely costly and lose money. So making Family movies might be more risky (there are probably several factors that influence how much money Family movies make; further analysis could elucidate these factors).  
+
+Another interesting factor to point out is that some genres that had lower budgets actually tend to make more money, and vice versa. For example, Horror films had some of the lowest budgets, but they actually rake in a decent amount of revenue. On the other hand, Romance movies had a higher budget, but fall in the bottom 3 when you consider gross revenue.
+
+
+---
+
+
+Finally, let's consider the relationship between budget and revenue: do higher budget films also generate more revenue?  
+
+First, we can perform a Pearson correlation to determine whether there's a significant correlation between budget and gross revenue.
+```{r}
+cor.test(budget,gross, method = c("pearson"))
+```
+  
+  
+Based on the output, we can see that there is a significant, positive relationship between budget and gross revenue (r=0.74, p<0.001), indicating that movies with higher budgets tend to generate more revenue.  
+
+We can visualize this relationship using a scatterplot.
+```{r,tidy=TRUE,tidy.opts=list(width.cutoff=60)}
+ggplot(na.omit(movies),aes(budget,gross)) + geom_point(size=3,alpha=0.8) + geom_smooth(method = lm,se=TRUE,color="goldenrod",size=2) + labs(x="Budget", y="Gross Revenue") + theme_cowplot(12) + ggtitle("Relationship between Movie Budget\n and Gross Revenue") + theme(plot.title = element_text(size=20,face="bold",hjust = 0.5)) + scale_y_continuous(labels = comma) + scale_x_continuous(labels = comma)
+```
+
+---
+
+
+
+#### Stars and Gross Revenue  
+
+Next, I want to look at the top 10 actors in the dataset based on the number of movies they're starred in.
+```{r}
+library(dplyr)
+library(magrittr)
+## tally the number of movies by star, sorted from highest to lowest
+movies %>% group_by(star) %>% tally(sort = TRUE)
+```
+
+
+I can now use the output to create a new dataset that only includes data from these 10 actors. 
+```{r,tidy=TRUE,tidy.opts=list(width.cutoff=60)}
+## subset of movies including top 10 stars
+top10star = subset(movies, star == 'Nicolas Cage' | star == 'Robert De Niro' | star == 'Tom Hanks' | star == 'Denzel Washington' | star == 'Bruce Willis' | star == 'Tom Cruise' | star == 'Johnny Depp' |   star == 'Sylvester Stallone' | star == 'John Travolta' | star == 'Kevin Costner')
+head(top10star)
+```
+
+Now I want to evaluate the relationship between actor and gross revenue to determine whether actors, and the movies they star in, differ in the amount of revenue they generate.  
+To formally test this relationship, I'll perform an ANOVA using star and gross revenue. 
+
+```{r,tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+top10.aov = aov(gross~star,data = top10star)
+summary(top10.aov)
+```
+
+Again, there are significant differences in the gross revenue generated by different actors, as the p value is significantly less than 0.  
+
+Next, we'll visualize these differences using a boxplot.
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+ggplot(top10star, aes(reorder(star,-gross),gross,color=reorder(star,-gross),fill=reorder(star,-gross))) + geom_boxplot(size=0.7,alpha=0.7) + theme_cowplot(12) + scale_y_continuous(labels = comma) + scale_color_brewer(name="Star (Actor)",palette = "RdBu") + scale_fill_brewer(name="Star (Actor)",palette = "RdBu") + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), axis.title = element_text(face="bold"), plot.title = element_text(size=16,face="bold",hjust = 0.5), legend.title = element_text(face="bold")) + labs(x="Star (Actor)", y="Gross Revenue",title="Gross Movie Revenue Gerenrated by Actor")
+```
+
+
+Based on my earlier output, the number of movies an actor is in doesn't necessarily seem to be correlated with how much revenue that movie generates. For example, Nicolas Cage has starred in the most movies, but he falls in the bottom 3 in terms of revenue generated. This is also true for Robert De Niro.  
+
+However, movies starring Tom Cruise, Tom Hanks, and Johnny Depp generate the most revenue among this group of actors. 
+
+---
+
+
+
+#### Top 5 Movies based on IMDb Score
+
+Finally, I want to determine what the top 5 movies in our dataset are based on IMDb score.
+```{r}
+## order movies based on score then reduce data frame to top 5 movies 
+movie.rank = arrange(movies, desc(score)) 
+movie.rank2 = movie.rank[1:5,]
+movie.rank2
+```
+
+I will use a lollipop graph to visualize the differences in IMDb scores among these films.
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+
+ggplot(movie.rank2, aes(x=reorder(name,-score), y=score,color=reorder(name,-score),fill=reorder(name,-score))) + geom_segment(aes(x=reorder(name,-score), xend=reorder(name,-score),y=0, yend=score),size=2) + geom_point(size=7,shape=21,alpha=0.6) + labs(x="",y="IMDb Score",title = "Top 5 Movies based on IMDb Score") + theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(),panel.background = element_blank(), plot.title = element_text(size=16,face="bold",hjust = 0.5), axis.ticks.x = element_blank(), axis.text.x = element_text(size=11), axis.title = element_text(face="bold"), axis.text.y = element_text(size = 11),legend.position = "none")  + scale_x_discrete(labels=c("The Shawshank\n Redemption","The Dark Knight","Pulp Fiction","Schindler's List","Lord of the Rings:\n Return of the King")) + scale_fill_manual(values=alpha(c("#cad2c5","#84a98c","#52796f","#354f52","#2f3e46"),0.85),guide="none") + scale_color_manual(values=c("#cad2c5","#84a98c","#52796f","#354f52","#2f3e46"), guide="none") + ylim(0,10)
+```
+
+
+
