@@ -1,0 +1,177 @@
+---
+title: "R Notebook - Billboard 100 Data Cleaning & Visualization"
+author: "Maya Reese Farmer"
+date: "October 16, 2021"
+output:
+  pdf_document: default
+  html_notebook: 
+    df_print: paged
+---
+
+### Introduction  
+
+I will be demonstrating some data cleaning and visualization techniques using the dplyr and tidyr packages in R. I will also be using the Billboard Hot 100 dataset from kaggle.com
+
+This dataset contains the following variables:  
+
+ - rank  
+ - song 
+ - artist
+ - last-week (rank in previous week)   
+ - peak-week (top rank achieved by song)
+ - weeks-on-board
+ - date
+
+```{r}
+## importing dataset into r
+charts <- read.csv("~/Downloads/charts.csv")
+attach(charts)
+head(charts)
+```
+
+---
+
+
+
+### Data Cleaning 
+
+##### task 1: convert date column to date format
+```{r}
+## 
+library(dplyr)
+library(lubridate)
+library(stringr)
+
+charts %>% select(date, song, artist) %>% mutate(date = ymd(date)) %>% head(10)
+```
+  
+
+##### task 2: create 2 new columns containing month and year
+```{r}
+charts %>% mutate(date = ymd(date)) %>%
+  distinct(date) %>%
+  mutate(month = floor_date(date, "month"), year = floor_date(date, "year")) %>% head(10)
+```
+  
+
+
+##### task 3: separate the artist column  
+
+Here, I want to break up the artist column so that each artist is designated as a primary artist (the first artist) or a featured artist (the 2nd, 3rd, or 4th artist) in different columns. To do that, I'm going to use the separate function in the tidyr package. With this I'm able to designate what characters or values I want to use as separators between columns and I can also name columns. Then, I'll create a new data frame called clean.charts that contains the original data along with the updated date columns and artist columns.
+```{r,tidy=TRUE,tidy.opts=list(width.cutoff=60)}
+library(tidyr)
+
+clean.charts = charts %>%
+  mutate(date = ymd(date)) %>%
+  mutate(month = floor_date(date, "month"), year = floor_date(date, "year")) %>%
+  separate(artist, c("primary.artist","featured.artist","featured.artist2","featured.artist3"), "\\sFeaturing\\s|\\s&\\s|,\\s|\\sX\\s|\\sx\\s|\\sWith\\s", remove = FALSE) 
+clean.charts %>% select(song, primary.artist, featured.artist,featured.artist2,featured.artist3) %>% head(10)
+```
+
+Overall, this is a pretty good way to separate these columns, but it isn't perfect. The original artist column is very messy and artists aren't separated the same way. For example, one of the separators I had to use was a comma. For artists that have a comma in their name, like Tyler, The Creator, our code will break up his name into Tyler in the primary artist column and The Creator in the featured artist column. This is something to remember if you're trying to isolate a single artist for further analysis later. But for the most part, the separate function did a pretty good job of breaking up the data into appropriate columns.  
+  
+  
+##### task 4: pivot table  
+
+Now that the data are fairly clean, I want to collapse the primary artist and featured artist columns (total 4 columns) into just 2 columns using the pivot_longer function in tidyr. This format will be more conducive for analyses in the future.
+
+```{r,tidy=TRUE,tidy.opts=list(width.cutoff=60)}
+pivot.artist = clean.charts %>%
+  pivot_longer(primary.artist:featured.artist3, names_to = "artist.type", values_to = "artist.name") 
+pivot.artist %>% select(song, artist.type,artist.name) %>% head(15)
+```
+
+Now that we have a new table where the artist name and type have been pivoted/collapsed into 2 columns, we can easily query artists and determine the number of songs where they were features or the primary artist.
+```{r}
+## example using SZA
+pivot.artist %>% distinct(song, artist.type,artist.name) %>% 
+  filter(artist.name == "SZA")
+```
+
+##### task 5: join genre  
+
+Finally, I want to join another data frame, the mtv10000 data, to my clean.charts data frame. The mtv10000 dataset will provide the genre of music for each primary artist. Because I want to retain all the rows in my 'clean.charts' data frame, I'm going to perform a left join. A left join keeps all data in the left table (clean.charts) and only the rows that match the condition in the second table will be added (NAs will be added in rows where there is no match in the second table). Essentially, if an artist in the clean.charts table is also in the mtv10000 table, then a genre will be returned. If an artist in the clean.charts table is not in the mtv10000 table, then a NA will be returned.
+
+```{r,tidy=TRUE,tidy.opts=list(width.cutoff=60)}
+mtv10000 <- read.csv("~/Downloads/mtv10000.csv")
+attach(mtv10000)
+
+## it's VERY important to trim the white spaces from the data before performing any joins
+clean.charts$primary.artist = trimws(clean.charts$primary.artist)
+mtv10000$name = trimws(mtv10000$name)
+attach(clean.charts)
+attach(mtv10000)
+
+clean.charts %>% left_join(mtv10000, by = c("primary.artist" = "name")) %>% select(primary.artist,genre) %>% head(10)
+```
+ So, the left join was successful, but as you can see there are a lot of missing artists in the mtv10000 dataset. This means that there are a lot of missing data points in the genre column of our joined data. If this were for a real project, the mtv10000 data would not be the best joining genre because the lack of data might skew our analyses. But it's fine for this informal project.  
+Now, we can use our cleaned and joined data to create a few visualizations!
+
+---
+
+
+### Data Visualization
+
+First, let's look at how the popularity of the top 5 genres have changed over time.  
+
+
+```{r}
+## create new dataframe from join
+genre.join = clean.charts %>% left_join(mtv10000, by = c("primary.artist" = "name"))
+
+## find the top 5 genres in df
+top5.genre = genre.join %>% select(date, primary.artist, genre) %>%
+  filter(!is.na(genre)) %>%
+  distinct() %>% 
+  count(genre) %>%
+  top_n(5) %>%
+  pull(genre)
+top5.genre
+```
+```{r,tidy=TRUE,tidy.opts=list(width.cutoff=60)}
+## create new dataframe only including yearly counts of top 5 genres
+genre.year = genre.join %>% select(year, song, genre) %>%
+  filter(genre %in% top5.genre) %>%
+  count(year, genre)
+
+## load ggplot2 and cowplot for graphs
+library(ggplot2)
+library(cowplot)
+library(wesanderson)
+
+cavalcanti = wes_palette("Cavalcanti1")
+
+ggplot(genre.year,aes(year,n,color=genre)) + geom_line(size=1) + theme_cowplot(12) + scale_color_manual(values = cavalcanti,name="Genre") + labs(x="Year",y="Number of Songs on Billboard 100",title = "Popularity of Top 5 Genres over Time") + theme(plot.title = element_text(size=16,face="bold",hjust = 0.5), axis.text.x = element_text(size=12), axis.title = element_text(face="bold"), axis.text.y = element_text(size = 12), legend.title = element_text(face = "bold"))
+```
+ It's very important to note that I cannot draw any concrete conclusions based on this figure because of the missing genre data from our join. It's clear that the mtv10000 data was missing new artists from the past 10 years because there is an overall decline in all genres starting around 2010 to the present (based on the figure). However, it's still pretty interesting to see how the popularity of the top 5 genres have shanged over time. For example, the popularity of country music increased significantly in the early 2000s. Pop music had the highest popularity overall around 2010. Also, Hip-Hop and Rap was a new genre on the Billboard 100 around 1980, but it is still in the top 5 genres in the dataset (very popular).
+
+---
+
+
+Next, let's look at the top 5 songs that were repeated ranked in the top 10 in 2019. 
+```{r}
+top5.rank = clean.charts %>%
+  select(rank, song, year) %>% filter(year == "2019-01-01", rank < 11) %>% 
+  count(song) %>% arrange(desc(n)) %>% top_n(5)
+top5.rank
+
+```
+
+```{r,tidy=TRUE,tidy.opts=list(width.cutoff=60)}
+ggplot(top5.rank,aes(x=reorder(song,n),y=n,fill=reorder(song,n),color=reorder(song,n))) + geom_bar(stat = "identity",size=1) + coord_flip() + theme_cowplot(12) + labs(x="",y="",title = "Most Popular Songs in 2019") + scale_fill_manual(values = alpha(c("#1A8693","#4D7A5C","#D4B95E","#D28F33","#B34233","#751A33"),0.7)) + scale_color_manual(values = c("#1A8693","#4D7A5C","#D4B95E","#D28F33","#B34233","#751A33")) + theme(plot.title = element_text(size=16,face = "bold",hjust = 0.5),legend.position = "none",axis.text = element_text(face = "bold", size=11)) + scale_x_discrete(labels=c("No Guidance","Senorita","Wow.","Old Town Road","Bad Guy","Sunflower (Spider-Man:\n Into The Spider-Verse"))
+```
+
+This shows the songs that repeatedly ranked in the top 10 (most popular) on the Billboard 100 in 2019. For example, Old Town Road ranked in the top 10 for 26 weeks in 2019.  
+
+
+
+Finally, I'm a Beyonce fan so I want to explore her top 10 most popular songs on Billboard 100.
+```{r,tidy=TRUE,tidy.opts=list(width.cutoff=60)}
+beyonce10 = clean.charts %>% select(primary.artist, song, month) %>% filter(primary.artist == "Beyonce") %>% distinct() %>% count(song) %>% arrange(desc(n)) %>% head(10)
+beyonce10
+
+ggplot(beyonce10, aes(reorder(song,-n),n)) + geom_segment(aes(x=reorder(song,-n), xend=reorder(song,n), y=0, yend=n),color="grey") + geom_point(size=5,color="steelblue", fill=alpha("steelblue", 0.3), alpha=0.7, shape=21, stroke=2) + theme_cowplot(12) + labs(x="",y="Number of Times on Billboard 100", title = "Most Popular Beyonce Songs") + scale_x_discrete(labels=c("Halo", "Baby\n Boy", "Check\n On It", "Crazy\n In Love","Irreplaceble", "Love\n On Top", "Single\n Ladies", "Sweet\n Dreams", "Upgrade\n U", "Flawless")) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), plot.title = element_text(size=16,face="bold",hjust = 0.5), axis.ticks = element_blank(), axis.text.x = element_text(size=10), axis.text.y = element_text(size = 11),axis.line = element_blank()) + ylim(0,9)
+```
+
+
+
